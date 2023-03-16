@@ -1,0 +1,138 @@
+on:
+  push:
+    branches: [main]
+  pull_request_review:
+    types: [submitted]
+
+name: CI
+
+jobs:
+  check:
+    name: Check
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            toolchain: stable-x86_64-unknown-linux-gnu
+          - os: macos-latest
+            toolchain: stable-x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - uses: actions/setup-go@v3 # we need go to build go-waku
+        with:
+          go-version: "1.19"
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
+          default: true
+          override: true
+      - uses: actions-rs/cargo@v1
+        continue-on-error: false
+        with:
+          command: check
+
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            toolchain: stable-x86_64-unknown-linux-gnu
+          - os: macos-latest
+            toolchain: stable-x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - uses: actions/setup-go@v3 # we need go to build go-waku
+        with:
+          go-version: "1.19"
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
+          default: true
+          override: true
+      - uses: actions-rs/cargo@v1
+        continue-on-error: false
+        with:
+          command: build
+      - uses: actions-rs/cargo@v1
+        continue-on-error: false
+        with:
+          command: test
+
+  lints:
+    name: Rust lints
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - uses: actions/setup-go@v3 # we need go to build go-waku
+        with:
+          go-version: "1.19"
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        continue-on-error: false
+        with:
+          command: fmt
+          args: --all -- --check
+
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        continue-on-error: false
+        with:
+          command: clippy
+  integration-test:
+    name: Integration Test Suite
+    runs-on: ubuntu-latest
+    env:
+      GRAPH_NODE_STATUS_ENDPOINT: "http://localhost:8030/graphql"
+      REGISTRY_SUBGRAPH: "https://api.thegraph.com/subgraphs/name/hopeyen/graphcast-registry-goerli"
+      NETWORK_SUBGRAPH: "https://gateway.testnet.thegraph.com/network"
+      GRAPHCAST_NETWORK: testnet
+      RUST_LOG: "off,hyper=off,graphcast_sdk=debug,poi_radio=debug,integration_tests=debug"
+      PRIVATE_KEY: ${{ secrets.SECRET_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - uses: actions/setup-go@v3 # we need go to build go-waku
+        with:
+          go-version: "1.19"
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        continue-on-error: false
+        with:
+          command: build
+
+      - name: Integration Tests
+        run: |
+          ./run-e2e-tests.sh
